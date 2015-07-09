@@ -2,12 +2,18 @@ package me.next.customframelayout;
 
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
+import android.widget.AbsListView;
 import android.widget.FrameLayout;
+import android.widget.ScrollView;
+
+import com.nineoldandroids.view.ViewHelper;
 
 /**
  * Created by NeXT on 15/7/8.
@@ -45,7 +51,19 @@ public class CustomFrameLayout extends FrameLayout {
     private float firstDownX;
     private float firstDownY;
 
+    private float yVelocity;
+    private float xVelocity;
+
+    private boolean isDisplaying;
+    private boolean isTouchOnCard;
+
+    private int mDisplayingCard = -1;
+    private int whichCardOnTouch;
+
+    private float mTouchingViewOrignY;
+
     private VelocityTracker mVelocityTracker;
+    private OnDisplayOrHideListener onDisplayOrHideListener;
 
     private static final int DEFAULT_TITLE_BAR_HEIGHT_DISPLAY = 20;
     private static final int DEFAULT_TITLE_BAR_HEIGHT_NO_DISPLAY = 60;
@@ -104,9 +122,10 @@ public class CustomFrameLayout extends FrameLayout {
         boolean isConsume = false;
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                isConsume = handleActonDown(event);
+                isConsume = handleActionDown(event);
                 break;
             case MotionEvent.ACTION_MOVE:
+                handleActionMove(event);
                 break;
             case MotionEvent.ACTION_UP:
                 break;
@@ -134,7 +153,21 @@ public class CustomFrameLayout extends FrameLayout {
         }
     }
 
-    private boolean handleActonDown(MotionEvent event) {
+    private void handleActionMove(MotionEvent event) {
+        if (whichCardOnTouch == -1 || !isTouchOnCard) return;
+        if (supportScrollInView((int)(firstDownY - event.getY()))) return;
+        computeVelocity();
+
+    }
+
+    private void computeVelocity() {
+        //units:  使用的速率单位.1的意思是，以一毫秒运动了多少个像素的速率， 1000表示 一秒时间内运动了多少个像素
+        mVelocityTracker.computeCurrentVelocity(1000, mMaxVelocity);
+        yVelocity = mVelocityTracker.getYVelocity();
+        xVelocity = mVelocityTracker.getXVelocity();
+    }
+
+    private boolean handleActionDown(MotionEvent event) {
         boolean isConsume = false;
         mPressStartTime = System.currentTimeMillis();
         firstDownY = downY = event.getY();
@@ -143,8 +176,147 @@ public class CustomFrameLayout extends FrameLayout {
         int childCount = isExistBackground ? mChildCount - 1 : mChildCount;
 
         // 判断点击那个 childView
+        if (!isDisplaying && downY > getMeasuredHeight() - mChildCount * mTitleBarHeightNoDisplay) {
+            for (int i = 1; i <= mChildCount; i++) {
+                if (downY < getMeasuredHeight() - mChildCount * mTitleBarHeightNoDisplay +
+                        mTitleBarHeightNoDisplay * i) {
+                    whichCardOnTouch = i - 1;
+                    isTouchOnCard = true;
+                    if (onDisplayOrHideListener != null) {
+                        onDisplayOrHideListener.onTouchCard(whichCardOnTouch);
+                    }
+                    isConsume = true;
+                    break;
+                }
+            }
+            mTouchingViewOrignY = ViewHelper.getY(getChildAt(whichCardOnTouch));
+        } else if (isDisplaying && downY > getMeasuredHeight() - (mChildCount - 1) * mTitleBarHeightDisplay) {
+            hideCard(mDisplayingCard);
+        } else if (isDisplaying && downY > mMarginTop && mDisplayingCard >= 0 &&
+                downY < getChildAt(mDisplayingCard).getMeasuredHeight() + mMarginTop) {
+            whichCardOnTouch = mDisplayingCard;
+            isTouchOnCard = true;
+        } else if (isDisplaying && (downY < mMarginTop
+                || (mDisplayingCard >= 0) && (downY > mMarginTop + getChildAt(mDisplayingCard).getMeasuredHeight()))) {
+            hideCard(mDisplayingCard);
+        }
 
+        if (isExistBackground && whichCardOnTouch == 0) {
+            isTouchOnCard = false;
+        }
         return isConsume;
+    }
+
+    /**
+     * @param direction SCv to check scrolling up, positive to check
+     *                  scrolling down.
+     * @return true if need dispatch touch event to child view,otherwise
+     */
+    private boolean supportScrollInView(int direction) {
+        View view = getChildAt(whichCardOnTouch);
+        if (view instanceof ViewGroup) {
+            View childView = findTopChildUnder((ViewGroup)view, firstDownX, firstDownY);
+            if (childView == null) return false;
+            if (childView instanceof AbsListView) {
+                AbsListView absListView = (AbsListView) childView;
+                if (Build.VERSION.SDK_INT > Build.VERSION_CODES.KITKAT) {
+                    return absListView.canScrollList(direction);
+                } else {
+                    return absListViewCanScrollList(absListView, direction);
+                }
+            } else if (childView instanceof ScrollView) {
+                ScrollView scrollView = (ScrollView) childView;
+                if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+                    return scrollView.canScrollVertically(direction);
+                }else {
+                    return scrollViewCanScrollVertically(scrollView, direction);
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     *  Copy From ScrollView (API Level >= 14)
+     * @param direction Negative to check scrolling up, positive to check
+     *                  scrolling down.
+     *   @return true if the scrollView can be scrolled in the specified direction,
+     *         false otherwise
+     */
+    private boolean scrollViewCanScrollVertically(ScrollView scrollView, int direction) {
+        final int offset = Math.max(0, scrollView.getScrollY());
+        final int range = computeVerticalScrollRange(scrollView) - scrollView.getHeight();
+        if (range == 0) return false;
+        if (direction < 0) { //scroll up
+            return offset > 0;
+        } else {//scroll down
+            return offset < range - 1;
+        }
+    }
+
+    /**
+     * Copy From ScrollView (API Level >= 14)
+     * <p>The scroll range of a scroll view is the overall height of all of its
+     * children.</p>
+     */
+    private int computeVerticalScrollRange(ScrollView scrollView) {
+        final int count = scrollView.getChildCount();
+        final int contentHeight = scrollView.getHeight() - scrollView.getPaddingBottom() - scrollView.getPaddingTop();
+        if (count == 0) {
+            return contentHeight;
+        }
+
+        int scrollRange = scrollView.getChildAt(0).getBottom();
+        final int scrollY = scrollView.getScrollY();
+        final int overscrollBottom = Math.max(0, scrollRange - contentHeight);
+        if (scrollY < 0) {
+            scrollRange -= scrollY;
+        } else if (scrollY > overscrollBottom) {
+            scrollRange += scrollY - overscrollBottom;
+        }
+
+        return scrollRange;
+    }
+
+    /**
+     * Copy From AbsListView (API Level >= 19)
+     * @param absListView AbsListView
+     * @param direction Negative to check scrolling up, positive to check
+     *                  scrolling down.
+     * @return true if the list can be scrolled in the specified direction,
+     *         false otherwise
+     */
+    private boolean absListViewCanScrollList(AbsListView absListView, int direction) {
+        final int childCount = absListView.getChildCount();
+        if (childCount == 0) {
+            return false;
+        }
+        final int firstPosition = absListView.getFirstVisiblePosition();
+        if (direction > 0) { // can scroll down
+            final int lastBottom = absListView.getChildAt(childCount - 1).getBottom();
+            final int lastPosition = firstPosition + childCount;
+            return lastPosition < absListView.getCount() ||
+                    lastBottom > absListView.getHeight() - absListView.getPaddingTop();
+        } else { // can scroll up
+            final int firstTop = absListView.getChildAt(0).getTop();
+            return  firstPosition > 0 || firstTop < absListView.getPaddingTop();
+        }
+    }
+
+    private View findTopChildUnder(ViewGroup viewGroup, float x, float y) {
+        final int childCount = viewGroup.getChildCount();
+        for (int i = childCount - 1; i >= 0; i++) {
+            View childView = viewGroup.getChildAt(i);
+            if (x >= childView.getLeft() && x < childView.getRight() &&
+                    y >= childView.getTop() && y < childView.getBottom()) {
+                return childView;
+            }
+        }
+        return null;
+    }
+
+    private void hideCard(int mDisplayingCard) {
+
     }
 
     private void initVelocityTracker(MotionEvent event) {
@@ -158,6 +330,16 @@ public class CustomFrameLayout extends FrameLayout {
         if (mBackGroundRid != -1) {
             isExistBackground = true;
         }
+    }
+
+    public void setOnDisplayOrHideListener(OnDisplayOrHideListener onDisplayOrHideListener) {
+        this.onDisplayOrHideListener = onDisplayOrHideListener;
+    }
+
+    public interface OnDisplayOrHideListener{
+        public void onDisplay(int whichCard);
+        public void onHide(int whichCard);
+        public void onTouchCard(int whichCard);
     }
 
     /**
