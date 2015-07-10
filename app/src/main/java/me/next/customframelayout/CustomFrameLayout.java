@@ -9,11 +9,14 @@ import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.animation.AccelerateInterpolator;
 import android.widget.AbsListView;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 
 import com.nineoldandroids.animation.Animator;
+import com.nineoldandroids.animation.AnimatorSet;
 import com.nineoldandroids.animation.ObjectAnimator;
 import com.nineoldandroids.animation.ValueAnimator;
 import com.nineoldandroids.view.ViewHelper;
@@ -83,6 +86,9 @@ public class CustomFrameLayout extends FrameLayout {
     private static final int DEFAULT_ANIM_DURATION = 250;
     private static final int MAX_CLICK_TIME = 300;
     private static final int MAX_CLICK_DISTANCE = 5;
+
+    private AccelerateInterpolator mCloseAnimatorInterpolator = new AccelerateInterpolator();
+    private AccelerateInterpolator mOpenAnimatorInterpolator = new AccelerateInterpolator();
 
     public CustomFrameLayout(Context context) {
         this(context, null);
@@ -387,11 +393,129 @@ public class CustomFrameLayout extends FrameLayout {
     }
 
     private void displayCard(int whichCardOnTouch) {
+        if(isDisplaying || isAnimating)return;
+        //TODO add darkFrameLayout
+//        if(isFade && mDarkFrameLayout != null) mDarkFrameLayout.fade(true);
+        List<Animator> animators = new ArrayList<>(mChildCount);
+        final float distance = ViewHelper.getY(getChildAt(whichCardOnTouch)) - mMarginTop;
+        ValueAnimator displayAnimator = ValueAnimator.ofFloat(ViewHelper.getY(getChildAt(whichCardOnTouch)), mMarginTop)
+                .setDuration(mDuration);
+        displayAnimator.setTarget(getChildAt(whichCardOnTouch));
+        final View displayingView = getChildAt(whichCardOnTouch);
+        displayAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator valueAnimator) {
+                float value = (float) valueAnimator.getAnimatedValue();
+                ViewHelper.setY(displayingView, value);
+                //TODO addDarkFrameLayout
+                /*
+                if(mDarkFrameLayout != null && isFade) {
+                    mDarkFrameLayout.fade((int) ((1-(value - mMarginTop)/distance) * DarkFrameLayout.MAX_ALPHA));
+                }
+                */
+            }
+        });
+        animators.add(displayAnimator);
+        int n = isExistBackground ? (mChildCount - 1) : mChildCount;
+        for(int i = 0,j = 1; i < mChildCount; i++) {
+            if(i == 0 && isExistBackground) continue;
+            if(i != whichCardOnTouch){
+                animators.add(ObjectAnimator
+                        .ofFloat(getChildAt(i), "y", ViewHelper.getY(getChildAt(i)),
+                                getMeasuredHeight() - mTitleBarHeightDisplay * (n - j))
+                        .setDuration(mDuration));
+                j ++;
+            }
+        }
+        AnimatorSet set = new AnimatorSet();
+        set.addListener(new Animator.AnimatorListener() {
+            @Override
+            public void onAnimationStart(Animator animator) {
+                isAnimating = true;
+            }
 
+            @Override
+            public void onAnimationEnd(Animator animator) {
+                isAnimating = false;
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animator) {
+                isAnimating = false;
+            }
+
+            @Override
+            public void onAnimationRepeat(Animator animator) {
+
+            }
+        });
+        set.setInterpolator(mOpenAnimatorInterpolator);
+        set.playTogether(animators);
+        set.start();
+        isDisplaying = true;
+        mDisplayingCard = whichCardOnTouch;
+        if(onDisplayOrHideListener != null)
+            onDisplayOrHideListener.onDisplay(isExistBackground ? (whichCardOnTouch - 1) : whichCardOnTouch);
     }
 
     private void hideCard(int mDisplayingCard) {
+        if(isAnimating) return;
+        List<Animator> animators = new ArrayList<>(mChildCount);
+        final View displayingCard = getChildAt(mDisplayingCard);
+        int t = (int) (getMeasuredHeight() - (mChildCount - mDisplayingCard) * mTitleBarHeightNoDisplay);
+        ValueAnimator displayAnimator = ValueAnimator.ofFloat(ViewHelper.getY(displayingCard), t).setDuration(mDuration);
+        displayAnimator.setTarget(displayingCard);
+        final int finalT = t;
+        displayAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animation) {
+                float value = (float) animation.getAnimatedValue();
+                ViewHelper.setY(displayingCard, value);
+                //TODO add darkFrameLayout
+                /*
+                if(mDarkFrameLayout != null && isFade && value < finalT) {
+                    mDarkFrameLayout.fade((int) ((1 - value/ finalT) * DarkFrameLayout.MAX_ALPHA));
+                }
+                */
+            }
+        });
+        animators.add(displayAnimator);
+        for (int i = 0; i < mChildCount; i++) {
+            if (i == 0 && isExistBackground) continue;
+            if (i != mDisplayingCard) {
+                t = (int)(getMeasuredHeight() - (mChildCount - i) * mTitleBarHeightNoDisplay);
+                animators.add(ObjectAnimator.ofFloat(getChildAt(i), "y", ViewHelper.getY(getChildAt(i)), t));
+            }
+        }
+        AnimatorSet animatorSet = new AnimatorSet();
+        animatorSet.addListener(new Animator.AnimatorListener() {
+            @Override
+            public void onAnimationStart(Animator animation) {
+                isAnimating = true;
+            }
 
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                isAnimating = false;
+                isDisplaying = false;
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                isAnimating = false;
+                isDisplaying = false;
+            }
+
+            @Override
+            public void onAnimationRepeat(Animator animation) {
+            }
+        });
+        animatorSet.setInterpolator(mCloseAnimatorInterpolator);
+        animatorSet.playTogether(animators);
+        animatorSet.start();
+        mDisplayingCard = -1;
+        if(onDisplayOrHideListener != null)
+            onDisplayOrHideListener.onHide(isExistBackground ? (mDisplayingCard - 1) : mDisplayingCard);
     }
 
     private void initVelocityTracker(MotionEvent event) {
