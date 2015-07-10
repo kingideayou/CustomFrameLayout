@@ -13,7 +13,13 @@ import android.widget.AbsListView;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 
+import com.nineoldandroids.animation.Animator;
+import com.nineoldandroids.animation.ObjectAnimator;
+import com.nineoldandroids.animation.ValueAnimator;
 import com.nineoldandroids.view.ViewHelper;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Created by NeXT on 15/7/8.
@@ -37,6 +43,7 @@ public class CustomFrameLayout extends FrameLayout {
     private int mBackGroundRid;
     private boolean isExistBackground;
 
+    // 动画的 Duration
     private int mDuration;
 
     private boolean isFade;
@@ -55,11 +62,15 @@ public class CustomFrameLayout extends FrameLayout {
     private float xVelocity;
 
     private boolean isDisplaying;
+    private boolean isDragging;
     private boolean isTouchOnCard;
+    private boolean isAnimating;
+
+    private float deltaY;
 
     private int mDisplayingCard = -1;
-    private int whichCardOnTouch;
 
+    private int whichCardOnTouch;
     private float mTouchingViewOrignY;
 
     private VelocityTracker mVelocityTracker;
@@ -70,6 +81,8 @@ public class CustomFrameLayout extends FrameLayout {
     private static final int DEFAULT_CARD_MARGIN_TOP = 0;
     private static final int DEFAULT_MOVE_DISTANCE_TO_TRIGGER = 30;
     private static final int DEFAULT_ANIM_DURATION = 250;
+    private static final int MAX_CLICK_TIME = 300;
+    private static final int MAX_CLICK_DISTANCE = 5;
 
     public CustomFrameLayout(Context context) {
         this(context, null);
@@ -128,6 +141,7 @@ public class CustomFrameLayout extends FrameLayout {
                 handleActionMove(event);
                 break;
             case MotionEvent.ACTION_UP:
+                handleActionUp(event);
                 break;
         }
         return super.dispatchTouchEvent(event);
@@ -146,18 +160,68 @@ public class CustomFrameLayout extends FrameLayout {
                 continue;
             }
 
-            //
             int t = (int) (getMeasuredHeight() - (mChildCount - i) * mTitleBarHeightNoDisplay);
             childView.layout(0, t, childView.getMeasuredWidth(), childView.getMeasuredHeight() + t);
 
         }
     }
 
+    private void handleActionUp(MotionEvent event) {
+        if (whichCardOnTouch == -1 || !isTouchOnCard) return;
+        long pressDuration = System.currentTimeMillis() - mPressStartTime;
+        computeVelocity();
+        if (!isDisplaying && ((event.getY() - firstDownY < 0 && (Math.abs(event.getY() - firstDownY) > mMoveDistanceToTrigger))
+                || (yVelocity < 0 && Math.abs(yVelocity) > mMinVelocity && Math.abs(yVelocity) > Math.abs(xVelocity)))) {
+            displayCard(whichCardOnTouch);
+        } else if (!isDisplaying && pressDuration > MAX_CLICK_TIME &&
+                distance(firstDownX, firstDownY, event.getX(), event.getY()) < MAX_CLICK_DISTANCE) {
+            displayCard(whichCardOnTouch);
+        } else if (!isDisplaying && isDragging && (event.getY() - firstDownY) > 0 ||
+                Math.abs(event.getY() - firstDownY) < mMoveDistanceToTrigger) {
+            hideCard(whichCardOnTouch);
+        } else if(isDisplaying) {
+            float currentY = ViewHelper.getY(getChildAt(mDisplayingCard));
+            if (currentY < mMarginTop || currentY < mMarginTop + mMoveDistanceToTrigger) {
+                ObjectAnimator.ofFloat(getChildAt(mDisplayingCard), "y", currentY, mMarginTop)
+                        .setDuration(mDuration).start();
+            } else {
+                hideCard(mDisplayingCard);
+            }
+        }
+        isTouchOnCard = false;
+        isDragging = false;
+        deltaY = 0;
+    }
+
     private void handleActionMove(MotionEvent event) {
         if (whichCardOnTouch == -1 || !isTouchOnCard) return;
         if (supportScrollInView((int)(firstDownY - event.getY()))) return;
         computeVelocity();
-
+        if (Math.abs(xVelocity) > Math.abs(yVelocity)) return;
+        if (!isDragging && Math.abs(event.getY() - firstDownY) > mTouchSlop
+                && Math.abs(event.getX() - firstDownX) < mTouchSlop) {
+            isDragging = true;
+            downY = event.getY();
+        }
+        if (isDragging) {
+            deltaY = event.getY() - downY;
+            downY = event.getY();
+            View touchingChildView = getChildAt(whichCardOnTouch);
+            if (!mBoundary) {
+                touchingChildView.offsetTopAndBottom((int)deltaY);
+            } else { // Card 没有设置边界
+                float touchingViewY = ViewHelper.getY(touchingChildView);
+                if (touchingViewY + deltaY <= mMarginTop) {
+                    // 向上移除屏幕
+                    touchingChildView.offsetTopAndBottom((int)(mMarginTop - touchingViewY));
+                } else if (touchingViewY + deltaY >= mTouchingViewOrignY) {
+                    // 向下移除屏幕
+                    touchingChildView.offsetTopAndBottom((int)(mTouchingViewOrignY - touchingViewY));
+                } else {
+                    touchingChildView.offsetTopAndBottom((int) deltaY);
+                }
+            }
+        }
     }
 
     private void computeVelocity() {
@@ -205,6 +269,13 @@ public class CustomFrameLayout extends FrameLayout {
             isTouchOnCard = false;
         }
         return isConsume;
+    }
+
+
+    private double distance(float x1, float y1, float x2, float y2) {
+        double deltaX = x2 - x1;
+        double deltaY = y2 - y1;
+        return Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     }
 
     /**
@@ -313,6 +384,10 @@ public class CustomFrameLayout extends FrameLayout {
             }
         }
         return null;
+    }
+
+    private void displayCard(int whichCardOnTouch) {
+
     }
 
     private void hideCard(int mDisplayingCard) {
