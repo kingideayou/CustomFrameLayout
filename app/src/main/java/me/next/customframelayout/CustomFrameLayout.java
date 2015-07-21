@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.os.Build;
 import android.util.AttributeSet;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
@@ -75,6 +76,8 @@ public class CustomFrameLayout extends FrameLayout {
 
     private int whichCardOnTouch;
     private float mTouchingViewOrignY;
+
+    private DarkFrameLayout mDarkFrameLayout;
 
     private VelocityTracker mVelocityTracker;
     private OnDisplayOrHideListener onDisplayOrHideListener;
@@ -413,8 +416,7 @@ public class CustomFrameLayout extends FrameLayout {
 
     private void displayCard(int whichCardOnTouch) {
         if(isDisplaying || isAnimating)return;
-        //TODO add darkFrameLayout
-//        if(isFade && mDarkFrameLayout != null) mDarkFrameLayout.fade(true);
+        if(isFade && mDarkFrameLayout != null) mDarkFrameLayout.fade(true);
         List<Animator> animators = new ArrayList<>(mChildCount);
         final float distance = ViewHelper.getY(getChildAt(whichCardOnTouch)) - mMarginTop;
         ValueAnimator displayAnimator = ValueAnimator.ofFloat(ViewHelper.getY(getChildAt(whichCardOnTouch)), mMarginTop)
@@ -427,11 +429,9 @@ public class CustomFrameLayout extends FrameLayout {
                 float value = (float) valueAnimator.getAnimatedValue();
                 ViewHelper.setY(displayingView, value);
                 //TODO addDarkFrameLayout
-                /*
                 if(mDarkFrameLayout != null && isFade) {
                     mDarkFrameLayout.fade((int) ((1-(value - mMarginTop)/distance) * DarkFrameLayout.MAX_ALPHA));
                 }
-                */
             }
         });
         animators.add(displayAnimator);
@@ -491,11 +491,9 @@ public class CustomFrameLayout extends FrameLayout {
                 float value = (float) animation.getAnimatedValue();
                 ViewHelper.setY(displayingCard, value);
                 //TODO add darkFrameLayout
-                /*
                 if(mDarkFrameLayout != null && isFade && value < finalT) {
                     mDarkFrameLayout.fade((int) ((1 - value/ finalT) * DarkFrameLayout.MAX_ALPHA));
                 }
-                */
             }
         });
         animators.add(displayAnimator);
@@ -546,7 +544,11 @@ public class CustomFrameLayout extends FrameLayout {
 
     private void initBackgroundView() {
         if (mBackGroundRid != -1) {
+            mDarkFrameLayout = new DarkFrameLayout(context);
+            mDarkFrameLayout.addView(LayoutInflater.from(context).inflate(mBackGroundRid, null));
+            mDarkFrameLayout.setCustomFrameLayout(this);
             isExistBackground = true;
+            addView(mDarkFrameLayout);
         }
     }
 
