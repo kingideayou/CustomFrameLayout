@@ -9,8 +9,8 @@ import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
-import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.AccelerateInterpolator;
+import android.view.animation.Interpolator;
 import android.widget.AbsListView;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
@@ -87,8 +87,8 @@ public class CustomFrameLayout extends FrameLayout {
     private static final int MAX_CLICK_TIME = 300;
     private static final int MAX_CLICK_DISTANCE = 5;
 
-    private AccelerateInterpolator mCloseAnimatorInterpolator = new AccelerateInterpolator();
-    private AccelerateInterpolator mOpenAnimatorInterpolator = new AccelerateInterpolator();
+    private Interpolator mCloseAnimatorInterpolator = new AccelerateInterpolator();
+    private Interpolator mOpenAnimatorInterpolator = new AccelerateInterpolator();
 
     public CustomFrameLayout(Context context) {
         this(context, null);
@@ -148,9 +148,20 @@ public class CustomFrameLayout extends FrameLayout {
                 break;
             case MotionEvent.ACTION_UP:
                 handleActionUp(event);
+                releaseVelocityTracker();
                 break;
         }
-        return super.dispatchTouchEvent(event);
+        return isConsume || super.dispatchTouchEvent(event);
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent event) {
+        return isDragging;
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        return true;
     }
 
     @Override
@@ -230,6 +241,14 @@ public class CustomFrameLayout extends FrameLayout {
         }
     }
 
+    private void releaseVelocityTracker() {
+        if (mVelocityTracker != null) {
+            mVelocityTracker.clear();
+            mVelocityTracker.recycle();
+            mVelocityTracker = null;
+        }
+    }
+
     private void computeVelocity() {
         //units:  使用的速率单位.1的意思是，以一毫秒运动了多少个像素的速率， 1000表示 一秒时间内运动了多少个像素
         mVelocityTracker.computeCurrentVelocity(1000, mMaxVelocity);
@@ -260,7 +279,7 @@ public class CustomFrameLayout extends FrameLayout {
                 }
             }
             mTouchingViewOrignY = ViewHelper.getY(getChildAt(whichCardOnTouch));
-        } else if (isDisplaying && downY > getMeasuredHeight() - (mChildCount - 1) * mTitleBarHeightDisplay) {
+        } else if (isDisplaying && downY > getMeasuredHeight() - (childCount - 1) * mTitleBarHeightDisplay) {
             hideCard(mDisplayingCard);
         } else if (isDisplaying && downY > mMarginTop && mDisplayingCard >= 0 &&
                 downY < getChildAt(mDisplayingCard).getMeasuredHeight() + mMarginTop) {
@@ -529,6 +548,119 @@ public class CustomFrameLayout extends FrameLayout {
         if (mBackGroundRid != -1) {
             isExistBackground = true;
         }
+    }
+
+    /**
+     * @return less than 0: No display card
+     */
+    public int getDisplayingCard() {
+        return isExistBackground ? (mDisplayingCard - 1) : mDisplayingCard;
+    }
+
+    public boolean isDisplaying() {
+        return isDisplaying;
+    }
+
+    public void setBoundary(boolean boundary) {
+        this.mBoundary = boundary;
+    }
+
+    public boolean isBoundary() {
+        return mBoundary;
+    }
+
+    public boolean isFade() {
+        return isFade;
+    }
+
+    public void setFade(boolean isFade) {
+        this.isFade = isFade;
+    }
+
+    /**
+     *
+     * @return marginTop unit:dip
+     */
+    public int getMarginTop() {
+        return px2dip(mMarginTop);
+    }
+
+    /**
+     *
+     * @param marginTop unit:dip
+     */
+    public void setMarginTop(int marginTop) {
+        this.mMarginTop = dip2px(marginTop);
+    }
+
+    /**
+     *
+     * @return unit:dip
+     */
+    public int getTitleBarHeightNoDisplay() {
+        return px2dip(mTitleBarHeightNoDisplay);
+    }
+
+    /**
+     *
+     * @param titleBarHeightNoDisplay unit:dip
+     */
+    public void setTitleBarHeightNoDisplay(int titleBarHeightNoDisplay) {
+        this.mTitleBarHeightNoDisplay = dip2px(titleBarHeightNoDisplay);
+        requestLayout();
+    }
+
+    /**
+     * @return unit:dip
+     */
+    public float getTitleBarHeightDisplay() {
+        return px2dip(mTitleBarHeightDisplay);
+    }
+
+    /**
+     * @param titleBarHeightDisplay unit:dip
+     */
+    public void setTitleBarHeightDisplay(int titleBarHeightDisplay) {
+        this.mTitleBarHeightDisplay = titleBarHeightDisplay;
+        requestLayout();
+    }
+
+    /**
+     * @return unit:dip
+     */
+    public float getMoveDistanceToTrigger() {
+        return px2dip(mMoveDistanceToTrigger);
+    }
+
+    /**
+     * @param moveDistanceToTrigger unit:dip
+     */
+    public void setMoveDistanceToTrigger(int moveDistanceToTrigger) {
+        this.mMoveDistanceToTrigger = moveDistanceToTrigger;
+    }
+
+    public Interpolator getOpenAnimatorInterpolator() {
+        return mOpenAnimatorInterpolator;
+    }
+
+    public void setOpenAnimatorInterpolator(Interpolator mOpenAnimatorInterpolator) {
+        this.mOpenAnimatorInterpolator = mOpenAnimatorInterpolator;
+    }
+
+    public Interpolator getCloseAnimatorInterpolator() {
+        return mCloseAnimatorInterpolator;
+    }
+
+    public void setCloseAnimatorInterpolator(Interpolator mCloseAnimatorInterpolator) {
+        this.mCloseAnimatorInterpolator = mCloseAnimatorInterpolator;
+    }
+
+    public int getAnimatorDuration() {
+        return mDuration;
+    }
+
+    public void setAnimatorDuration(int mDuration) {
+        this.mDuration = mDuration;
     }
 
     public void setOnDisplayOrHideListener(OnDisplayOrHideListener onDisplayOrHideListener) {
